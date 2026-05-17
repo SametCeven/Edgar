@@ -28,16 +28,27 @@ class Config:
     gcp_project_id: str = field(default_factory=lambda: _required("GCP_PROJECT_ID"))
     bq_location: str = field(default_factory=lambda: os.getenv("BQ_LOCATION", "EU"))
 
-    # Paths
+    # Folder Paths
     project_root_dir: Path = PROJECT_ROOT
     log_dir: Path = PROJECT_ROOT / "logs"
     cache_dir: Path = PROJECT_ROOT / "data" / "edgar_cache"
+    cache_preprocess_dir: Path = PROJECT_ROOT / "data" / "edgar_cache" / "preprocess"
     cache_tickers_dir: Path = PROJECT_ROOT / "data" / "edgar_cache" / "tickers"
     cache_submissions_dir: Path = PROJECT_ROOT / "data" / "edgar_cache" / "submissions"
     cache_companyfacts_dir: Path = (
         PROJECT_ROOT / "data" / "edgar_cache" / "companyfacts"
     )
-    universe_path: Path = PROJECT_ROOT / "data" / "universe.json"
+
+    # Fİle Paths
+    russel_1000_xls_path: Path = (
+        PROJECT_ROOT / "data" / "russel_1000" / "iShares-Russell-1000-ETF_fund.xls"
+    )
+    company_1000_csv_path: Path = (
+        PROJECT_ROOT / "data" / "edgar_cache" / "preprocess" / "company_1000.csv"
+    )
+    company_remaining_csv_path: Path = (
+        PROJECT_ROOT / "data" / "edgar_cache" / "preprocess" / "company_remaining.csv"
+    )
 
     # Logging
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "DEBUG"))
@@ -46,6 +57,7 @@ class Config:
     def __post_init__(self):
         for d in (
             self.cache_dir,
+            self.cache_preprocess_dir,
             self.cache_tickers_dir,
             self.cache_submissions_dir,
             self.cache_companyfacts_dir,

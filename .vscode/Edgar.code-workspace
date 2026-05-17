@@ -3,12 +3,25 @@
     {
       "name": "📁 Root",
       "path": ".."
+    },
+    {
+      "name": "📁 scripts",
+      "path": "../scripts"
+    },
+    {
+      "name": "📁 dbt",
+      "path": "../dbt"
+    },
+    {
+      "name": "📁 src",
+      "path": "../src/edgar"
     }
   ],
   "settings": {
     "explorer.autoReveal": false,
     "python.analysis.typeCheckingMode": "standard",
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.analysis.extraPaths": ["${workspaceFolder:📁 Root}/src"],
+    "python.defaultInterpreterPath": "${workspaceFolder:📁 Root}/.venv/Scripts/python.exe",
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.formatOnSave": true,

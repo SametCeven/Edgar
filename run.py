@@ -4,6 +4,10 @@ from edgar.config import Config
 from edgar.shared import AppLogger
 
 COMMANDS = {
+    "preprocess": {
+        "fn": "edgar.ingestion.preprocess.run",
+        "help": "Local russel 1000 company + Edgar company_tickers endpoint → local csv company_1000.csv",
+    },
     "fetch": {
         "fn": "edgar.ingestion.fetch.run",
         "help": "Fetch data from SEC → local cache json",
