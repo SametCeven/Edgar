@@ -7,8 +7,9 @@
 *.pyc
 *.log
 
-venv
+.venv
 __pycache__
 logs
 powerbi
 data
+logs

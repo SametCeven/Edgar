@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -16,12 +16,12 @@ def _required(key: str) -> str:
 
 @dataclass(frozen=True)
 class Config:
-    # EDGAR
+    # EDGAR API
     edgar_user_agent: str = field(default_factory=lambda: _required("EDGAR_USER_AGENT"))
     edgar_base_company_tickers: str = "https://www.sec.gov/files/company_tickers.json"
     edgar_base_submissions: str = "https://data.sec.gov/submissions"
     edgar_base_companyfacts: str = "https://data.sec.gov/api/xbrl/companyfacts"
-    edgar_rate_limit_per_sec: int = 10
+    edgar_rate_limit_sec: float = 0.5
     edgar_retry_attempts: int = 5
 
     # GCP
@@ -29,15 +29,26 @@ class Config:
     bq_location: str = field(default_factory=lambda: os.getenv("BQ_LOCATION", "EU"))
 
     # Paths
-    project_root: Path = PROJECT_ROOT
-    cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "edgar_cache")
+    project_root_dir: Path = PROJECT_ROOT
     log_dir: Path = PROJECT_ROOT / "logs"
+    cache_dir: Path = PROJECT_ROOT / "data" / "edgar_cache"
+    cache_tickers_dir: Path = PROJECT_ROOT / "data" / "edgar_cache" / "tickers"
+    cache_submissions_dir: Path = PROJECT_ROOT / "data" / "edgar_cache" / "submissions"
+    cache_companyfacts_dir: Path = (
+        PROJECT_ROOT / "data" / "edgar_cache" / "companyfacts"
+    )
+    universe_path: Path = PROJECT_ROOT / "data" / "universe.json"
 
     # Logging
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "DEBUG"))
     log_max_files: int = 60
-    
+
     def __post_init__(self):
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-
-
+        for d in (
+            self.cache_dir,
+            self.cache_tickers_dir,
+            self.cache_submissions_dir,
+            self.cache_companyfacts_dir,
+            self.log_dir,
+        ):
+            d.mkdir(parents=True, exist_ok=True)
