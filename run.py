@@ -1,83 +1,42 @@
 import argparse
-import importlib
 from edgar.config import Config
 from edgar.shared import AppLogger
+from edgar.orchestration import pipeline
+from scripts import diag_temp
 
-COMMANDS = {
-    "preprocess": {
-        "fn": "edgar.ingestion.preprocess.run",
-        "help": "Local russel 1000 company + Edgar company_tickers endpoint → local csv company_1000.csv",
-    },
-    "fetch": {
-        "fn": "edgar.ingestion.fetch.run",
-        "help": "Fetch data from SEC → local cache json",
-    },
-    "parse": {
-        "fn": "edgar.ingestion.parse.run",
-        "help": "Local cache json → local csv",
-    },
-    "load": {
-        "fn": "edgar.ingestion.load.run",
-        "help": "Local csv → BigQuery",
-    },
-    "transform": {
-        "fn": "edgar.transformation.transform.run",
-        "help": "Run DBT transformations",
-    },
-    "train": {
-        "fn": "edgar.ml.train.run",
-        "help": "Train ML model (BigQuery IO)",
-    },
-    "pipeline": {
-        "fn": "edgar.orchestration.pipeline.run",
-        "help": "Run full pipeline",
-    },
-    "diag-temp": {
-        "fn": "scripts.diag_temp.run",
-        "help": "Temporary diagnostics",
-    },
-}
-
-
-def resolve_function(path: str):
-    module_path, fn_name = path.rsplit(".", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, fn_name)
+STEPS = ["preprocess", "fetch", "parse", "load", "transform", "train"]
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="ML Pipeline Runner")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(description="Edgar Pipeline Runner")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    for name, meta in COMMANDS.items():
-        subparsers.add_parser(name, help=meta["help"])
+    p = sub.add_parser(
+        "pipeline", help="Run pipeline (all steps, or selected via flags)"
+    )
+    for step in STEPS:
+        p.add_argument(f"--{step}", action="store_true", help=f"Run {step} step")
+
+    sub.add_parser("diag-temp", help="Run scripts/diag_temp.py")
 
     return parser.parse_args()
 
 
 def main():
     config = Config()
-    logger = AppLogger(
-        level_str=config.log_level,
-        log_dir=config.log_dir,
-    )
+    logger = AppLogger(level_str=config.log_level, log_dir=config.log_dir)
 
     args = parse_args()
-    command = args.command
+    logger.info(f"Starting App (Command:{args.command})")
 
-    logger.info(f"Starting App (Command:{command})")
-
-    cmd = COMMANDS.get(command)
-    if not cmd:
-        logger.error(f"Unknown command: {command}")
-        raise SystemExit(1)
-
-    fn_path = cmd["fn"]
-    logger.info(f"Resolving function: {fn_path}")
-
-    fn = resolve_function(fn_path)
-
-    fn(config, logger)
+    if args.command == "pipeline":
+        selected = [s for s in STEPS if getattr(args, s)]
+        if not selected:
+            selected = STEPS
+        ordered = [s for s in STEPS if s in selected]
+        pipeline.run(config, logger, steps=ordered)
+    elif args.command == "diag-temp":
+        diag_temp.run(config, logger)
 
 
 if __name__ == "__main__":

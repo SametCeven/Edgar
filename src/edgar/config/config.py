@@ -40,8 +40,8 @@ class Config:
     )
 
     # Fİle Paths
-    russel_1000_xls_path: Path = (
-        PROJECT_ROOT / "data" / "russel_1000" / "iShares-Russell-1000-ETF_fund.xls"
+    russel_1000_xlsx_path: Path = (
+        PROJECT_ROOT / "data" / "russel_1000" / "russel_1000.xlsx"
     )
     company_1000_csv_path: Path = (
         PROJECT_ROOT / "data" / "edgar_cache" / "preprocess" / "company_1000.csv"

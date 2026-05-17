@@ -1,88 +1,76 @@
 import csv
-import re
-import xml.etree.ElementTree as ET
+import openpyxl
 from pathlib import Path
 from edgar.config import Config
 from edgar.shared import AppLogger, EdgarClient
 
-# SpreadsheetML namespace used by iShares export
-NS = {"ss": "urn:schemas-microsoft-com:office:spreadsheet"}
 
-
-def _parse_iwb_holdings(xls_path: Path, logger: AppLogger) -> list[dict]:
-    logger.info(f"Parsing {xls_path.name}")
-    raw = xls_path.read_text(encoding="utf-8", errors="replace")
-    # iShares ships malformed XML (unescaped '&' in URLs) — escape stray '&'
-    cleaned = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9A-Fa-f]+);)", "&amp;", raw)
-    root = ET.fromstring(cleaned)
-
-    holdings_ws = next(
-        (
-            ws
-            for ws in root.findall("ss:Worksheet", NS)
-            if ws.get(f"{{{NS['ss']}}}Name") == "Holdings"
-        ),
-        None,
-    )
-    if holdings_ws is None:
-        raise RuntimeError("Holdings worksheet not found in IWB xls")
-
-    rows_xml = holdings_ws.find("ss:Table", NS).findall("ss:Row", NS)
-
-    # Find header row by locating row whose first cell text is 'Ticker'
-    header_idx = None
-    headers: list[str] = []
-    for i, row in enumerate(rows_xml):
-        cells = row.findall("ss:Cell", NS)
-        texts = [
-            (c.find("ss:Data", NS).text if c.find("ss:Data", NS) is not None else "")
-            for c in cells
-        ]
-        if texts and texts[0] == "Ticker":
-            header_idx = i
-            headers = texts
-            break
-
-    if header_idx is None:
-        raise RuntimeError("Could not locate 'Ticker' header row in Holdings sheet")
-
-    out: list[dict] = []
-    for row in rows_xml[header_idx + 1 :]:
-        cells = row.findall("ss:Cell", NS)
-        if not cells:
-            continue
-        values = [
-            (c.find("ss:Data", NS).text if c.find("ss:Data", NS) is not None else "")
-            for c in cells
-        ]
-        rec = dict(zip(headers, values))
-        ticker = (rec.get("Ticker") or "").strip().upper()
-        asset_class = (rec.get("Asset Class") or "").strip().lower()
-        if not ticker or ticker in ("-", "--", "USD", "CASH"):
-            continue
-        if asset_class and asset_class != "equity":
-            continue  # drop cash, futures, etc.
-        out.append(
-            {
-                "ticker": ticker,
-                "name": (rec.get("Name") or "").strip(),
-                "sector": (rec.get("Sector") or "").strip(),
-            }
-        )
-    logger.info(f"Parsed {len(out)} equity holdings from IWB")
-    return out
-
-
-def _build_edgar_ticker_index(raw: dict) -> dict[str, dict]:
-    return {
+# reads from edgar api, returns dict of dicts
+# "AAPL": {"cik": "0000320193", "name": "Apple Inc."},
+# "MSFT": {"cik": "0000789019", "name": "Microsoft Corp"},
+def _get_company_tickers(logger: AppLogger, client: EdgarClient) -> dict[str, dict]:
+    raw = client.get_company_tickers()
+    ticker_lookup = {
         v["ticker"].upper(): {
             "cik": str(v["cik_str"]).zfill(10),
             "name": v["title"],
         }
         for v in raw.values()
     }
+    logger.info(f"EDGAR ticker map: {len(ticker_lookup)} tickers")
+    return ticker_lookup
 
 
+# reads local .xlsx file, drops non-equity / cash rows
+# returns list of dict
+# {"ticker": "AAPL", "name": "APPLE INC", "sector": "Information Technology"},
+# {"ticker": "MSFT", "name": "MICROSOFT CORP", "sector": "Information Technology"},
+def _parse_russel_1000_xlsx(logger: AppLogger, xlsx_path: Path) -> list[dict]:
+    logger.info(f"Reading {xlsx_path.name}")
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = ws.iter_rows(values_only=True)
+    headers = [str(h).strip() if h else "" for h in next(rows)]
+    col = {h: i for i, h in enumerate(headers)}
+
+    required = ("Ticker", "Name", "Sector", "Asset Class")
+    missing = [h for h in required if h not in col]
+    if missing:
+        raise RuntimeError(f"Missing columns in xlsx: {missing}")
+
+    out: list[dict] = []
+    for row in rows:
+        if not row:
+            continue
+        ticker = (str(row[col["Ticker"]]) if row[col["Ticker"]] else "").strip().upper()
+        asset_class = (
+            (str(row[col["Asset Class"]]) if row[col["Asset Class"]] else "")
+            .strip()
+            .lower()
+        )
+        if not ticker or ticker in ("-", "--", "USD", "CASH"):
+            continue
+        if asset_class and asset_class != "equity":
+            continue
+        out.append(
+            {
+                "ticker": ticker,
+                "name": (str(row[col["Name"]]) if row[col["Name"]] else "").strip(),
+                "sector": (
+                    str(row[col["Sector"]]) if row[col["Sector"]] else ""
+                ).strip(),
+            }
+        )
+    wb.close()
+    logger.info(f"Parsed {len(out)} equity holdings from IWB")
+    return out
+
+
+# helper for _join_edgar_russel
+# normalizes tickers
+# some tickers differ for ishares and edgar
+# Berkshire Hathaway B => ishares(BRKB) edgar(BRK-B)
 def _ticker_candidates(t: str) -> list[str]:
     variants = {t, t.replace(".", "-")}
     if len(t) > 1 and t[-1].isalpha() and "-" not in t and "." not in t:
@@ -90,28 +78,23 @@ def _ticker_candidates(t: str) -> list[str]:
     return list(variants)
 
 
-def run(config: Config, logger: AppLogger):
-    logger.info("preprocess: build company_1000.csv")
-
-    # 1. Parse IWB holdings
-    iwb_rows = _parse_iwb_holdings(config.russel_1000_xls_path, logger)
-
-    # 2. Fetch EDGAR ticker map (cached)
-    client = EdgarClient(config, logger)
-    edgar_raw = client.get_company_tickers()
-    edgar_idx = _build_edgar_ticker_index(edgar_raw)
-    logger.info(f"EDGAR ticker map: {len(edgar_idx)} tickers")
-
-    # 3. Join
+# join russel 1000 xlsx output to edgar company tickers output to get ticker + cik
+def _join_edgar_russel(
+    logger: AppLogger,
+    russel_1000_tickers_list: list[dict],
+    ticker_lookup: dict[str, dict],
+) -> tuple[list[dict], list[dict]]:
     matched: list[dict] = []
     unmatched: list[dict] = []
     seen_ciks: set[str] = set()
-    for r in iwb_rows:
-        hit = next((c for c in _ticker_candidates(r["ticker"]) if c in edgar_idx), None)
+    for r in russel_1000_tickers_list:
+        hit = next(
+            (c for c in _ticker_candidates(r["ticker"]) if c in ticker_lookup), None
+        )
         if not hit:
             unmatched.append(r)
             continue
-        info = edgar_idx[hit]
+        info = ticker_lookup[hit]
         if info["cik"] in seen_ciks:
             continue
         seen_ciks.add(info["cik"])
@@ -124,8 +107,17 @@ def run(config: Config, logger: AppLogger):
                 "sec_name": info["name"],
             }
         )
+    logger.info(f"Joined: {len(matched)} matched, {len(unmatched)} unmatched")
+    return matched, unmatched
 
-    # 4. Write outputs
+
+# write joined tuple to csv
+def _write_company_1000(
+    config: Config,
+    logger: AppLogger,
+    matched: list[dict],
+    unmatched: list[dict],
+) -> None:
     out_path = config.company_1000_csv_path
     with out_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(
@@ -144,3 +136,16 @@ def run(config: Config, logger: AppLogger):
         logger.warning(
             f"{len(unmatched)} IWB tickers had no EDGAR match → {unmatched_path}"
         )
+
+
+# runner
+def run(config: Config, logger: AppLogger, client: EdgarClient):
+    logger.info("preprocess: build company_1000.csv")
+    ticker_lookup = _get_company_tickers(logger, client)
+    russel_1000_tickers_list = _parse_russel_1000_xlsx(
+        logger, config.russel_1000_xlsx_path
+    )
+    matched, unmatched = _join_edgar_russel(
+        logger, russel_1000_tickers_list, ticker_lookup
+    )
+    _write_company_1000(config, logger, matched, unmatched)

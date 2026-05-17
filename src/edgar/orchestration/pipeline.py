@@ -1,18 +1,27 @@
 from edgar.config import Config
-from edgar.shared import AppLogger
+from edgar.shared import AppLogger, EdgarClient
 from edgar.ingestion import preprocess, fetch, parse, load
 from edgar.transformation import transform
 from edgar.ml import train
 
 
-def run(config: Config, logger: AppLogger):
-    logger.info("Started pipeline")
+def run(config: Config, logger: AppLogger, steps: list[str]):
+    logger.info(f"Pipeline starting: steps={steps}")
 
-    preprocess.run(config, logger)
-    fetch.run(config, logger)
-    parse.run(config, logger)
-    load.run(config, logger)
-    transform.run(config, logger)
-    train.run(config, logger)
+    client = EdgarClient(config, logger)
+    # db_manager = DatabaseManager(config, logger)  # add when implemented
 
-    logger.info("Completed pipeline")
+    if "preprocess" in steps:
+        preprocess.run(config, logger, client)
+    if "fetch" in steps:
+        fetch.run(config, logger, client)
+    if "parse" in steps:
+        parse.run(config, logger)
+    if "load" in steps:
+        load.run(config, logger)  # add db_manager when implemented
+    if "transform" in steps:
+        transform.run(config, logger)
+    if "train" in steps:
+        train.run(config, logger)  # add db_manager when implemented
+
+    logger.info("Pipeline complete")

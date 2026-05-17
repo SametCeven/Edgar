@@ -6,6 +6,9 @@ tenacity>=8.2
 python-dotenv>=1.0
 pyyaml>=6.0
 
+# XLSX
+openpyxl>=3.1
+
 # BigQuery
 google-cloud-bigquery>=3.17
 google-cloud-bigquery-storage>=2.24
