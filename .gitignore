@@ -4,3 +4,11 @@
 *.zip
 *.csv
 *.xlsx
+*.pyc
+*.log
+
+venv
+__pycache__
+logs
+powerbi
+data

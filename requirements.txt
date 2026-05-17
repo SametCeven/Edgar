@@ -1,0 +1,29 @@
+# HTTP + retry
+requests>=2.31
+tenacity>=8.2
+
+# Config
+python-dotenv>=1.0
+pyyaml>=6.0
+
+# BigQuery
+google-cloud-bigquery>=3.17
+google-cloud-bigquery-storage>=2.24
+pandas>=2.1
+pyarrow>=14.0
+
+# dbt
+dbt-core>=1.7
+dbt-bigquery>=1.7
+
+# ML
+scikit-learn>=1.4
+numpy>=1.26
+scipy>=1.11
+joblib>=1.3
+
+# Jupyter
+jupyter>=1.0
+ipykernel>=6.29
+matplotlib>=3.8
+seaborn>=0.13

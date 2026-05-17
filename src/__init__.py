@@ -1,0 +1,1 @@
+from .infrastructure.logger import AppLogger
