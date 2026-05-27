@@ -23,10 +23,10 @@ class Config:
     edgar_base_companyfacts: str = "https://data.sec.gov/api/xbrl/companyfacts"
     edgar_rate_limit_sec: float = 0.5
     edgar_retry_attempts: int = 5
-
-    # GCP
-    gcp_project_id: str = field(default_factory=lambda: _required("GCP_PROJECT_ID"))
-    bq_location: str = field(default_factory=lambda: os.getenv("BQ_LOCATION", "EU"))
+    edgar_retry_wait_multiplier: float = 1.0
+    edgar_retry_wait_min_sec: float = 1.0
+    edgar_retry_wait_max_sec: float = 30.0
+    edgar_request_timeout_sec: float = 30.0
 
     # Folder Paths
     project_root_dir: Path = PROJECT_ROOT
@@ -38,8 +38,15 @@ class Config:
     cache_companyfacts_dir: Path = (
         PROJECT_ROOT / "data" / "edgar_cache" / "companyfacts"
     )
+    warehouse_dir: Path = PROJECT_ROOT / "data" / "warehouse"
+    raw_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "raw"
+    dim_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "dim"
+    fact_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "fact"
+    int_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "int"
+    mart_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "mart"
+    ml_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "ml"
 
-    # Fİle Paths
+    # File Paths
     russel_1000_xlsx_path: Path = (
         PROJECT_ROOT / "data" / "russel_1000" / "russel_1000.xlsx"
     )
@@ -54,6 +61,9 @@ class Config:
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "DEBUG"))
     log_max_files: int = 60
 
+    # Business Config
+    ## Whitelist
+
     def __post_init__(self):
         for d in (
             self.cache_dir,
@@ -61,6 +71,13 @@ class Config:
             self.cache_tickers_dir,
             self.cache_submissions_dir,
             self.cache_companyfacts_dir,
+            self.warehouse_dir,
+            self.raw_dir,
+            self.dim_dir,
+            self.fact_dir,
+            self.int_dir,
+            self.mart_dir,
+            self.ml_dir,
             self.log_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)

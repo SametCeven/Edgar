@@ -4,7 +4,7 @@ from edgar.shared import AppLogger
 from edgar.orchestration import pipeline
 from scripts import diag_temp
 
-STEPS = ["preprocess", "fetch", "parse", "load", "transform", "train"]
+STEPS = ["preprocess", "fetch", "load", "transform", "train"]
 
 
 def parse_args():

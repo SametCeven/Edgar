@@ -62,7 +62,7 @@ def _fetch_all(
 def _write_failed(logger: AppLogger, config: Config, failed: list[dict]) -> None:
     if not failed:
         return
-    failed_path = config.cache_preprocess_dir / "fetch_failed.csv"
+    failed_path = config.cache_dir / "fetch_failed.csv"
     with failed_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["cik", "ticker", "endpoint", "error"])
         w.writeheader()

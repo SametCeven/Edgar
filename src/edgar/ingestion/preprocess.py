@@ -8,8 +8,10 @@ from edgar.shared import AppLogger, EdgarClient
 # reads from edgar api, returns dict of dicts
 # "AAPL": {"cik": "0000320193", "name": "Apple Inc."},
 # "MSFT": {"cik": "0000789019", "name": "Microsoft Corp"},
-def _get_company_tickers(logger: AppLogger, client: EdgarClient) -> dict[str, dict]:
-    raw = client.get_company_tickers()
+def _get_company_tickers(
+    logger: AppLogger, edgar_client: EdgarClient
+) -> dict[str, dict]:
+    raw = edgar_client.get_company_tickers()
     ticker_lookup = {
         v["ticker"].upper(): {
             "cik": str(v["cik_str"]).zfill(10),
@@ -139,9 +141,9 @@ def _write_company_1000(
 
 
 # runner
-def run(config: Config, logger: AppLogger, client: EdgarClient):
+def run(config: Config, logger: AppLogger, edgar_client: EdgarClient):
     logger.info("preprocess: build company_1000.csv")
-    ticker_lookup = _get_company_tickers(logger, client)
+    ticker_lookup = _get_company_tickers(logger, edgar_client)
     russel_1000_tickers_list = _parse_russel_1000_xlsx(
         logger, config.russel_1000_xlsx_path
     )

@@ -5,14 +5,6 @@
       "path": ".."
     },
     {
-      "name": "📁 scripts",
-      "path": "../scripts"
-    },
-    {
-      "name": "📁 dbt",
-      "path": "../dbt"
-    },
-    {
       "name": "📁 src",
       "path": "../src/edgar"
     }

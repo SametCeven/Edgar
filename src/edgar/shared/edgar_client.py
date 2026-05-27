@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import requests
 from tenacity import (
-    retry,
+    Retrying,
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
@@ -82,15 +82,23 @@ class EdgarClient:
 
         return data
 
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=1, max=30),
-        retry=retry_if_exception_type((requests.RequestException,)),
-        reraise=True,
-    )
     def _fetch(self, url: str) -> dict:
-        self._rate_limit()
-        self.logger.debug(f"GET {url}")
-        resp = self.session.get(url, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        retryer = Retrying(
+            stop=stop_after_attempt(self.config.edgar_retry_attempts),
+            wait=wait_exponential(
+                multiplier=self.config.edgar_retry_wait_multiplier,
+                min=self.config.edgar_retry_wait_min_sec,
+                max=self.config.edgar_retry_wait_max_sec,
+            ),
+            retry=retry_if_exception_type((requests.RequestException,)),
+            reraise=True,
+        )
+        for attempt in retryer:
+            with attempt:
+                self._rate_limit()
+                self.logger.debug(f"GET {url}")
+                resp = self.session.get(
+                    url, timeout=self.config.edgar_request_timeout_sec
+                )
+                resp.raise_for_status()
+                return resp.json()
