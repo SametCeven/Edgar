@@ -6,6 +6,7 @@
 *.xlsx
 *.pyc
 *.log
+*.pbix
 
 .venv
 __pycache__

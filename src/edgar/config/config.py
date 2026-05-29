@@ -41,7 +41,6 @@ class Config:
     warehouse_dir: Path = PROJECT_ROOT / "data" / "warehouse"
     raw_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "raw"
     dim_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "dim"
-    fact_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "fact"
     int_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "int"
     mart_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "mart"
     ml_dir: Path = PROJECT_ROOT / "data" / "warehouse" / "ml"
@@ -74,7 +73,6 @@ class Config:
             self.warehouse_dir,
             self.raw_dir,
             self.dim_dir,
-            self.fact_dir,
             self.int_dir,
             self.mart_dir,
             self.ml_dir,

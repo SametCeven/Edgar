@@ -1,12 +1,24 @@
 import pandas as pd
 from pathlib import Path
+from typing import Iterator
 from .logger import AppLogger
 
 
-def read_csv(logger: AppLogger, path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
+def read_csv(logger: AppLogger, path: Path, **kwargs) -> pd.DataFrame:
+    df = pd.read_csv(path, **kwargs)
     logger.info(f"read_csv: {len(df):,} rows × {len(df.columns)} cols ← {path.name}")
     return df
+
+
+# chunked read for files too large to hold in memory (e.g. raw_company_facts.csv).
+# yields DataFrames of chunk_size rows; caller filters/accumulates per chunk.
+# pass dtype/parse_dates via kwargs to avoid mixed-type coercion on raw reads.
+def read_csv_incrementally(
+    logger: AppLogger, path: Path, chunk_size: int = 1_000_000, **kwargs
+) -> Iterator[pd.DataFrame]:
+    logger.info(f"read_csv_incrementally: ← {path.name} (chunk_size={chunk_size:,})")
+    for chunk in pd.read_csv(path, chunksize=chunk_size, **kwargs):
+        yield chunk
 
 
 def write_csv(logger: AppLogger, path: Path, df: pd.DataFrame) -> None:
