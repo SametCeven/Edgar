@@ -102,3 +102,4 @@ class EdgarClient:
                 )
                 resp.raise_for_status()
                 return resp.json()
+        raise RuntimeError("unreachable: Retrying with reraise=True always returns or raises")

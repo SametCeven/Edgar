@@ -95,7 +95,7 @@
       3. dim_form — distinct forms in raw_filings; form_mapping flags 10-K/10-Q/10-K-A/10-Q-A and annual/quarterly/amendment
       4. dim_period — distinct (start, end) windows; duration_type (instant/quarter/semi/ytd9/annual); is_included = end in [2015 .. today+1y]
    2. int — read raw facts/filings + dims directly; filter on the dims' is_included flags (int_financial: concept/period/form; int_filing: form only — its time filter is filing_date year ≥ 2015 applied directly, no dim_period join), canonicalize, and denormalize company attrs so marts read int alone.
-      1. int_financial — one value per (cik, normalized_concept, period). Filter (concept/period/form is_included + unit whitelist + non-empty fp), then (a) concept coalescing (most-prevalent raw tag per filing) and (b) restatement (latest filed wins via raw `filed`; was_restated flags differing values). This is where XBRL tag inconsistency is resolved.
+      1. int_financial — one value per (cik, normalized_concept, period). Filter (concept/period/form is_included + unit whitelist + non-empty fp), then (a) concept coalescing (most-prevalent raw tag per filing) and (b) restatement (latest filed wins via raw `filed`; was_restated flags differing values, n_versions counts the contributing filings — both int-only, not carried to marts). This is where XBRL tag inconsistency is resolved.
       2. int_filing — one row per filing (included forms, filing_date year ≥ 2015 — applied directly, no dim_period join, no upper bound); is_annual/is_quarterly/is_amendment joined from dim_form; was_restated = an amendment exists for the same (cik, report_date); filing_lag.
    3. marts — reshape int into one table per ML task (revenue panel, filing features, capital-allocation, company-health).
 3. train (mart → ml; one module per task via train.py)
@@ -111,7 +111,7 @@ layer read contract:
 - int reads raw + dim
 - mart reads int only
 - ml reads mart only
-- powerbi reads mart/ml only
+- powerbi reads mart/ml only — exception: the Financial Data page also reads int_financial + int_filing directly
 
 module reads-from:
 
@@ -152,6 +152,7 @@ no deviations: every module reads only its allowed upstream layers (company attr
 
 ### LOGGER
 1. Centralized AppLogger class, initialized at run.py passed to pipeline.py to consumers
+2. one log file per run (`run_<timestamp>.log` under logs/); retention prunes to the newest `log_max_files` (60), so old runs self-clean
 
 ### EDGAR CLIENT
 1. EdgarClient class, initialized at pipeline.py passed to consumers
@@ -184,13 +185,13 @@ no deviations: every module reads only its allowed upstream layers (company attr
    3. load
 2. EDA
    1. python run.py diag-temp
-   2. chunked scan of raw to validate dim/int cardinalities and surface dirt (concept/unit/form/fp breakdowns, garbage end dates, null starts) before transform is built on it
+   2. diag-temp is a scratch diagnostic subcommand, now a no-op stub; its chunked scan of raw (dim/int cardinalities, concept/unit/form/fp breakdowns, garbage end dates, null starts) informed the dim/int filter design
 3. TRANSFORMATION
    1. raw => dim => int => mart
 4. ML
    1. mart => ml
 5. POWERBI
-   1. read from local mart + ml
+   1. read from local mart + ml (+ int_financial, int_filing for the Financial Data page)
 
 
 `-------------------------------------------------------------------------------------------------------------------------`
@@ -215,8 +216,9 @@ no deviations: every module reads only its allowed upstream layers (company attr
    1. growth (QoQ, YoY, next-Q target) is computed only between genuinely adjacent periods — gated on day-distance to the comparison row (≈1 quarter for QoQ/target, ≈1 year for YoY); jumps across a missing quarter or overlapping period become NaN instead of a spurious 100x growth
    2. target is winsorized to [1%, 99%] so a few micro-denominator quarters don't dominate OLS squared loss
    3. KNOWN GAP: Q4 isn't tagged discretely (only inside the annual 10-K). Deriving it as FY − (Q1+Q2+Q3) was tested but pushed test R² negative — the derived rows add seasonal Q4/Q1 swings a linear model can't fit (plus restatement-vintage noise from the subtraction), so the panel stays interim-only (Q1–Q3). Revisit only with a seasonality-aware model
-7. clustering marts (Tasks 3/4) — one row per company, latest FY / period (snapshot, not panel). Both winsorize their clustering features to [1%, 99%]: capital-allocation ratios are scaled by operating cash flow (near-zero CFO blows them to 60x+); company-health uses six distress ratios (debt_to_assets, debt_to_equity, current_ratio, roa, interest_coverage, cfo_to_debt), which blow up on near-zero equity/current-liabilities/interest-expense/debt. Unwinsorized, KMeans collapses into one blob + outlier singletons (a false-high silhouette); absolute-$ and PBI-context columns stay unclipped.
-   1. cluster count (K) — silhouette and Davies-Bouldin both peak at K=2, but that is degenerate: K=2 isolates one outlier speck from one blob (sizes 960/9 capital-allocation, 968/2 company-health), the same false-high silhouette winsorization targets. K is therefore not chosen by maximizing the metric; K=4 is the most balanced tested partition (817/122/23/7 and 622/324/22/2) and is the interpretability choice. Sweep: scripts/cluster_scan.py (sweeps K 2–10 and a DBSCAN eps × min_samples grid).
+   4. margin columns (gross/operating/net) are PBI context, not model features; gross_profit falls back to revenue − cogs when GrossProfit isn't separately tagged
+7. clustering marts (Tasks 3/4) — one row per company, latest FY / period (snapshot, not panel). Both winsorize their clustering features to [1%, 99%]: capital-allocation ratios are scaled by |operating cash flow| (abs, so a negative CFO doesn't sign-flip the ratios; zero CFO → NaN, near-zero blows them to 60x+); company-health uses six distress ratios (debt_to_assets, debt_to_equity, current_ratio, roa, interest_coverage, cfo_to_debt), which blow up on near-zero equity/current-liabilities/interest-expense/debt. Unwinsorized, KMeans collapses into one blob + outlier singletons (a false-high silhouette); absolute-$ and PBI-context columns stay unclipped.
+   1. cluster count (K) — silhouette and Davies-Bouldin both peak at K=2, but that is degenerate: K=2 isolates one outlier speck from one blob (sizes 960/9 capital-allocation, 968/2 company-health), the same false-high silhouette winsorization targets. K is therefore not chosen by maximizing the metric; K=4 is the most balanced tested partition (817/122/23/7 and 622/324/22/2) and is the interpretability choice, picked from a K 2–10 and DBSCAN eps × min_samples sweep.
    2. DBSCAN — after winsorizing + scaling, the features are one dense cloud with scattered outliers (worst case for density clustering). At eps=1.5/min_samples=5, and across the full grid, DBSCAN returns a single ~900-point cluster plus 37–75 noise points (capital-allocation collapses to exactly one cluster). It produces no usable segmentation, so it functions as outlier detection — the noise points flag the unusual companies — not as a second clustering view alongside KMeans.
 
 
@@ -239,7 +241,7 @@ common: every task reads its mart only, builds the sklearn pipeline (impute → 
    2. split — GroupShuffleSplit(test_size=0.25, random_state=42) grouped by cik so one company can't sit in both train and test (leakage guard)
    3. encode — NUM [filing_lag_days, total_assets, net_income, leverage] → median impute → StandardScaler; CAT [sector, form] → OneHotEncoder(handle_unknown="ignore")
    4. train — LogisticRegression(class_weight="balanced", max_iter=1000); balanced weighting counters the ~1.6% positive rate
-   5. test — predict labels + proba; ROC-AUC (headline, threshold-free) + P@k (R-precision over the k actual positives) + precision/recall/F1 at the 0.5 cutoff (read low purely from prevalence + balancing, not ranking ability)
+   5. test — predict labels + proba; ROC-AUC (headline, threshold-free) + P@k (R-precision over the k actual positives; k emitted as test_positives_k) + precision/recall/F1 at the 0.5 cutoff (read low purely from prevalence + balancing, not ranking ability)
    6. write — pred_restatement.csv (ids + actual + proba)
 3. clustering - capital allocation (train_capital_allocation.py)
    1. read — mart_capital_allocation.csv
@@ -272,7 +274,21 @@ No relationships: each visual's slicers come from the same table as the visual. 
 - text box: DATA FLOW — preprocess → fetch → load → dim → int → mart → ml
 - cards (typed): companies 987 · filings 970,892 (raw) · facts 21,782,145 · canonical 1,501,984
 
-### PAGE 2 — regression · revenue
+### PAGE 2 — financial data
+tables: int_financial, int_filing
+- text box (explanation): "The canonical cleaned data every mart and model reads from. 21.8M raw XBRL facts are distilled to 1,501,984 values — one per (company, normalized_concept, period) — after resolving the two biggest data-quality issues: inconsistent XBRL tags (many raw tags → one normalized_concept) and restatements (latest-filed value wins; was_restated flags the changes). int_filing is one row per filing (34,171 after the form + 2015-onward filters)."
+- cards (computed): canonical values = COUNTROWS(int_financial) (1,501,984) · companies = DISTINCTCOUNT(int_financial[cik]) · concepts = DISTINCTCOUNT(int_financial[normalized_concept]) · filings = COUNTROWS(int_filing) (34,171)
+- table — int_financial · Columns: ticker, name, sector, statement, normalized_concept, fy, end_date, val, unit, was_restated, n_versions
+- bar — int_financial · Axis: statement (IS/BS/CF) · Values: Count of val (fact coverage by statement)
+- bar — int_financial · Axis: normalized_concept · Values: Count of val (most-populated line items)
+- table — int_filing · Columns: ticker, name, sector, form, report_date, filing_date, filing_lag_days, is_amendment, was_restated
+- column — int_filing · X axis: report_year · Values: Count of accession_number (filing volume over time)
+- bar — int_filing · Axis: form · Values: Count of accession_number (10-K / 10-Q / amendment mix)
+- slicers — int_financial: sector, statement, normalized_concept, duration_type, fy, ticker
+- slicers — int_filing: sector, form, report_year, was_restated
+- no relationships: int_financial visuals + slicers read int_financial, int_filing's read int_filing (same rule as the rest of the report)
+
+### PAGE 3 — regression · revenue
 tables: mart_revenue, pred_revenue, ml_metrics
 - text box (explanation): "Can next-quarter revenue growth be predicted from a company's recent growth and sector? Linear regression on ~26k company-quarters, trained pre-2023 and tested on 2023+. Finding: quarter-to-quarter growth is near-unpredictable (low R²) — the model reverts to the mean, so revenue behaves close to a random walk. The descriptive trend (COVID dip and recovery) is the real story."
 - line — mart_revenue · X axis: end_year, end_quarter · Values: Avg revenue_qoq_growth, Avg revenue_yoy_growth
@@ -283,7 +299,7 @@ tables: mart_revenue, pred_revenue, ml_metrics
 - slicers — mart_revenue: sector, end_year, end_quarter, ticker
 - cards — task=revenue: r2, rmse, mae
 
-### PAGE 3 — classification · restatement
+### PAGE 4 — classification · restatement
 tables: mart_restatement, pred_restatement, ml_metrics
 - text box (explanation): "Which filings are most likely to be restated? Logistic regression scores restatement risk across ~34k filings (only ~1.6% are restated). With balanced class weighting it ranks risk well (ROC-AUC ≈ 0.75): restated filings score higher probabilities, and 10-K annual reports are restated far more often than 10-Qs. Use it to prioritize which filings to review, not as a hard yes/no."
 - column (histogram) — pred_restatement · X axis: proba (bins) · Values: Count · Legend: actual
@@ -292,9 +308,9 @@ tables: mart_restatement, pred_restatement, ml_metrics
 - matrix — pred_restatement · Rows: actual · Columns: predicted (new column = IF(proba>=0.5,1,0)) · Values: Count of accession_number
 - table — pred_restatement (sort proba desc) · Columns: ticker, name, form, report_date, proba, actual
 - slicers — pred_restatement: sector, form (filter the model visuals; the two rate bars stay unfiltered population context)
-- cards — task=restatement: roc_auc, recall, precision, f1, precision_at_k
+- cards — task=restatement: roc_auc, recall, precision, f1, precision_at_k (test_positives_k = k also in ml_metrics as P@k context; not carded)
 
-### PAGE 4 — clustering · capital allocation
+### PAGE 5 — clustering · capital allocation
 tables: cluster_capital_allocation, ml_metrics
 - text box (explanation): "How do companies deploy their operating cash flow? K-means groups ~1,000 companies by capex, buybacks, dividends, acquisitions and debt activity (each scaled to operating cash flow). Most fall into one 'typical' allocation profile, with smaller distinct groups: buyback-led returners, debt-funded acquirers, and heavy debt-refinancers."
 - matrix — Rows: kmeans_cluster · Values: Avg capex_to_cfo, buybacks_to_cfo, dividends_paid_to_cfo, acquisitions_to_cfo, debt_issued_to_cfo, debt_repaid_to_cfo, share_based_comp_to_cfo
@@ -305,7 +321,7 @@ tables: cluster_capital_allocation, ml_metrics
 - slicers — sector, kmeans_cluster, exchange, dbscan_cluster (-1 = outliers)
 - cards — task=capital_allocation: silhouette, davies_bouldin, inertia
 
-### PAGE 5 — clustering · financial health
+### PAGE 6 — clustering · financial health
 tables: cluster_company_health, ml_metrics
 - text box (explanation): "How financially healthy are these companies? K-means groups ~1,000 companies on six distress ratios (leverage, liquidity, profitability, coverage). The result is a clear health gradient — low-leverage / high-coverage, levered / capital-intensive (utilities and real estate), and high-leverage / negative-equity — plus a small set of outliers."
 - scatter — X: debt_to_assets (Don't summarize) · Y: current_ratio (Don't summarize) · Legend: kmeans_cluster · Details: ticker
