@@ -9,6 +9,9 @@ pyyaml>=6.0
 # XLSX
 openpyxl>=3.1
 
+# DataFrames
+pandas>=2.0
+
 # ML
 scikit-learn>=1.4
 numpy>=1.26
