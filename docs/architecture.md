@@ -336,9 +336,7 @@ tables: cluster_company_health, ml_metrics
 `-------------------------------------------------------------------------------------------------------------------------`
 
 ## REMAINING TODO
-1. understand the code
-2. code and doc review and cleanup
-3. powerbi
+1. powerbi
 
 
 
