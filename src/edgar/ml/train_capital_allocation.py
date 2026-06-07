@@ -7,34 +7,17 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 
-ID_COLS = (
-    "cik",
-    "ticker",
-    "name",
-    "sector",
-    "sic_description",
-    "exchange",
-    "state_of_incorporation",
-    "fiscal_year_end",
-    "end_date",
-    "end_year",
-    "end_quarter",
-    "fy",
-    # raw $ magnitudes are context for interpreting clusters, not features
-    "capex",
-    "buybacks",
-    "dividends_paid",
-    "acquisitions",
-    "debt_issued",
-    "debt_repaid",
-    "share_based_comp",
-    "cf_operating",
-    "revenue",
-    "net_income",
-    "fcf",
-    "total_payout",
-    "net_debt_change",
-)
+# Clustering feature set: cash deployment scaled by operating cash flow. The raw $
+# magnitudes they derive from (capex, buybacks, ...) stay as PBI context, not inputs.
+FEATURES = [
+    "capex_to_cfo",
+    "buybacks_to_cfo",
+    "dividends_paid_to_cfo",
+    "acquisitions_to_cfo",
+    "debt_issued_to_cfo",
+    "debt_repaid_to_cfo",
+    "share_based_comp_to_cfo",
+]
 K = 4
 
 
@@ -42,8 +25,7 @@ def run(config: Config, logger: AppLogger):
     logger.info("=" * 60)
     logger.info("Task 3: capital allocation clustering (KMeans + DBSCAN)")
     df = read_csv(logger, config.mart_dir / "mart_capital_allocation.csv")
-    feats = [c for c in df.columns if c not in ID_COLS]
-    X = df[feats].replace([np.inf, -np.inf], np.nan)
+    X = df[FEATURES].replace([np.inf, -np.inf], np.nan)
     Xp = Pipeline(
         [("imp", SimpleImputer(strategy="median")), ("sc", StandardScaler())]
     ).fit_transform(X)
